@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.1] - 2026-10-14
+
+### Added
+- **In-Code Rule Suppression with Mandatory Audit Justification:**
+  - Syntax support for `# strata:ignore RULE_ID reason: <explanation>` and `// strata:ignore ...`.
+  - Proximity matching scoped directly to the target resource block.
+  - Strict audit guarantee: directives without mandatory `reason:` are discarded.
+  - Distinct terminal reporting table displaying `[SUPPRESSED]` rules with in-source justification reasons.
+  - Standard SARIF v2.1.0 `suppressions` object (`inSource` kind with audit justification) for GitHub Code Scanning integration.
+  - JSON reporting includes `total_suppressed` count and structured `suppressed` array.
+
+---
+
 ## [0.1.0] - 2026-10-13
 
 ### Added

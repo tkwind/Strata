@@ -1,17 +1,24 @@
-use crate::parser::Finding;
+use crate::parser::{Finding, SuppressedFinding};
 use serde_json::{Value, json};
 
 pub struct JsonReporter;
 
 impl JsonReporter {
-    pub fn generate(findings: &[Finding], total_scanned: usize, duration_ms: u128) -> Value {
+    pub fn generate(
+        findings: &[Finding],
+        suppressed: &[SuppressedFinding],
+        total_scanned: usize,
+        duration_ms: u128,
+    ) -> Value {
         json!({
             "scanner": "strata",
-            "version": "0.1.0",
+            "version": env!("CARGO_PKG_VERSION"),
             "total_files_scanned": total_scanned,
             "scan_duration_ms": duration_ms,
             "total_violations": findings.len(),
-            "findings": findings
+            "total_suppressed": suppressed.len(),
+            "findings": findings,
+            "suppressed": suppressed
         })
     }
 }

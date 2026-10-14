@@ -92,3 +92,48 @@ fn test_sarif_export_format() {
 
     let _ = std::fs::remove_file(sarif_path);
 }
+
+#[test]
+fn test_in_code_rule_suppression_passes_and_shows_justification() {
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "scan",
+            "tests/fixtures/terraform/suppressed_infra.tf",
+        ])
+        .output()
+        .expect("Failed to execute cargo run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("[SUPPRESSED]"));
+    assert!(stdout.contains("AWS-CIS-S3-001"));
+    assert!(
+        stdout.contains("Public assets bucket intentionally configured for CDN asset delivery")
+    );
+    assert!(stdout.contains("1 suppressed"));
+}
+
+#[test]
+fn test_in_code_rule_suppression_json_output() {
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "scan",
+            "tests/fixtures/terraform/suppressed_infra.tf",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Failed to execute cargo run");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"total_suppressed\": 1"));
+    assert!(stdout.contains("\"total_violations\": 0"));
+    assert!(
+        stdout.contains("Public assets bucket intentionally configured for CDN asset delivery")
+    );
+}

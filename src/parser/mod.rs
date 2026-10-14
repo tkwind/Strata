@@ -1,6 +1,9 @@
 pub mod docker;
 pub mod k8s;
+pub mod suppression;
 pub mod terraform;
+
+pub use suppression::{SuppressedFinding, SuppressionParser};
 
 use serde::{Deserialize, Serialize};
 use std::fmt;

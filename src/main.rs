@@ -21,7 +21,7 @@ use notify::DesktopNotifier;
 use parser::docker::DockerParser;
 use parser::k8s::K8sParser;
 use parser::terraform::TerraformParser;
-use parser::{Finding, Severity};
+use parser::{Finding, Severity, SuppressionParser};
 use report::{JsonReporter, SarifReporter, TerminalReporter};
 use rules::{BuiltinRuleEngine, LuaPolicyRunner};
 use security::PathSanitizer;
@@ -34,7 +34,7 @@ use walkdir::WalkDir;
 #[derive(Parser)]
 #[command(
     name = "strata",
-    version = "0.1.0",
+    version = env!("CARGO_PKG_VERSION"),
     about = "Zero-trust Infrastructure-as-Code & Cloud Security Policy Engine",
     long_about = "Strata evaluates Terraform, Dockerfiles, and Kubernetes manifests against CIS Benchmarks, NIST 800-53, and sandboxed Lua rules with deterministic CI/CD exit codes and zero telemetry."
 )]
@@ -360,6 +360,7 @@ fn run_scan(
 
     let mut total_files_scanned = 0;
     let mut all_findings: Vec<Finding> = Vec::new();
+    let mut all_suppressions = Vec::new();
 
     // 4. File Discovery & Parsing
     let walker = WalkDir::new(&target_dir).into_iter().filter_entry(|e| {
@@ -384,6 +385,8 @@ fn run_scan(
         };
 
         total_files_scanned += 1;
+
+        all_suppressions.extend(SuppressionParser::parse_content(&file_str, &content));
 
         // Check for raw hardcoded secrets across all parsed files
         let secret_findings = builtin_engine.evaluate_raw_secrets(&file_str, &content);
@@ -420,22 +423,29 @@ fn run_scan(
     }
 
     // 5. Filter findings by config ignore list and minimum severity
-    let mut filtered_findings: Vec<Finding> = all_findings
+    let filtered_findings: Vec<Finding> = all_findings
         .into_iter()
         .filter(|f| !cfg.is_rule_ignored(&f.rule_id))
         .filter(|f| f.severity >= min_severity)
         .collect();
 
+    let (mut active_findings, suppressed_findings) =
+        SuppressionParser::filter_findings(filtered_findings, &all_suppressions);
+
     // Sort: Critical first, then High, Medium, Low
-    filtered_findings.sort_by(|a, b| b.severity.cmp(&a.severity));
+    active_findings.sort_by(|a, b| b.severity.cmp(&a.severity));
 
     let duration_ms = start_time.elapsed().as_millis();
 
     // 6. Generate Output
     match format.to_lowercase().as_str() {
         "json" => {
-            let json_out =
-                JsonReporter::generate(&filtered_findings, total_files_scanned, duration_ms);
+            let json_out = JsonReporter::generate(
+                &active_findings,
+                &suppressed_findings,
+                total_files_scanned,
+                duration_ms,
+            );
             let json_str = serde_json::to_string_pretty(&json_out).unwrap();
             if let Some(out_path) = &output_file {
                 let _ = fs::write(out_path, &json_str);
@@ -445,7 +455,7 @@ fn run_scan(
             }
         }
         "sarif" => {
-            let sarif_out = SarifReporter::generate(&filtered_findings);
+            let sarif_out = SarifReporter::generate(&active_findings, &suppressed_findings);
             let sarif_str = serde_json::to_string_pretty(&sarif_out).unwrap();
             if let Some(out_path) = &output_file {
                 let _ = fs::write(out_path, &sarif_str);
@@ -455,9 +465,14 @@ fn run_scan(
             }
         }
         _ => {
-            TerminalReporter::render(&filtered_findings, total_files_scanned, duration_ms);
+            TerminalReporter::render(
+                &active_findings,
+                &suppressed_findings,
+                total_files_scanned,
+                duration_ms,
+            );
             if let Some(out_path) = &output_file {
-                let sarif_out = SarifReporter::generate(&filtered_findings);
+                let sarif_out = SarifReporter::generate(&active_findings, &suppressed_findings);
                 let _ = fs::write(out_path, serde_json::to_string_pretty(&sarif_out).unwrap());
                 println!("[+] SARIF export saved to {}", out_path.display());
             }
@@ -468,7 +483,7 @@ fn run_scan(
     if notify {
         let mut crit = 0;
         let mut high = 0;
-        for f in &filtered_findings {
+        for f in &active_findings {
             if f.severity == Severity::Critical {
                 crit += 1;
             } else if f.severity == Severity::High {
@@ -483,7 +498,7 @@ fn run_scan(
     }
 
     // 8. Deterministic CI/CD Exit Code Evaluation
-    let should_fail = filtered_findings
+    let should_fail = active_findings
         .iter()
         .any(|f| f.severity >= fail_on_severity);
 

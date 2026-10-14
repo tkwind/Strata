@@ -1,13 +1,14 @@
-use crate::parser::{Finding, Severity};
+use crate::parser::{Finding, Severity, SuppressedFinding};
 use serde_json::{Value, json};
 
 pub struct SarifReporter;
 
 impl SarifReporter {
-    pub fn generate(findings: &[Finding]) -> Value {
+    pub fn generate(findings: &[Finding], suppressed: &[SuppressedFinding]) -> Value {
         let mut rules = Vec::new();
         let mut results = Vec::new();
 
+        // 1. Active unsuppressed findings
         for f in findings {
             let level = match f.severity {
                 Severity::Critical | Severity::High => "error",
@@ -52,6 +53,42 @@ impl SarifReporter {
                                 "endLine": f.location.line_end
                             }
                         }
+                    }
+                ]
+            }));
+        }
+
+        // 2. Suppressed findings with in-source justification
+        for s in suppressed {
+            let level = match s.finding.severity {
+                Severity::Critical | Severity::High => "error",
+                Severity::Medium => "warning",
+                Severity::Low => "note",
+            };
+
+            results.push(json!({
+                "ruleId": s.finding.rule_id,
+                "level": level,
+                "message": {
+                    "text": format!("{}: {}", s.finding.title, s.finding.description)
+                },
+                "locations": [
+                    {
+                        "physicalLocation": {
+                            "artifactLocation": {
+                                "uri": s.finding.location.file_path
+                            },
+                            "region": {
+                                "startLine": s.finding.location.line_start,
+                                "endLine": s.finding.location.line_end
+                            }
+                        }
+                    }
+                ],
+                "suppressions": [
+                    {
+                        "kind": "inSource",
+                        "justification": s.reason
                     }
                 ]
             }));

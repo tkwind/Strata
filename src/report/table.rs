@@ -1,10 +1,15 @@
-use crate::parser::{Finding, Severity};
+use crate::parser::{Finding, Severity, SuppressedFinding};
 use colored::*;
 
 pub struct TerminalReporter;
 
 impl TerminalReporter {
-    pub fn render(findings: &[Finding], total_files_scanned: usize, duration_ms: u128) {
+    pub fn render(
+        findings: &[Finding],
+        suppressed: &[SuppressedFinding],
+        total_files_scanned: usize,
+        duration_ms: u128,
+    ) {
         println!();
         println!(
             "{}",
@@ -19,12 +24,37 @@ impl TerminalReporter {
         );
 
         if findings.is_empty() {
-            println!(
-                "  {} No policy violations detected across {} scanned files. ({} ms)",
-                "[PASSED]".green().bold(),
-                total_files_scanned,
-                duration_ms
-            );
+            if suppressed.is_empty() {
+                println!(
+                    "  {} No policy violations detected across {} scanned files. ({} ms)",
+                    "[PASSED]".green().bold(),
+                    total_files_scanned,
+                    duration_ms
+                );
+            } else {
+                println!(
+                    "  {} All policy violations resolved or justified across {} scanned files. ({} suppressed, {} ms)",
+                    "[PASSED]".green().bold(),
+                    total_files_scanned,
+                    suppressed.len().to_string().cyan(),
+                    duration_ms
+                );
+                println!();
+                println!(
+                    "{}",
+                    "Suppressed Violations (In-Source Justification):".dimmed()
+                );
+                for s in suppressed {
+                    println!(
+                        "  {} {} at {}:{} | Reason: {}",
+                        "[SUPPRESSED]".cyan(),
+                        s.finding.rule_id.bold().white(),
+                        s.finding.location.file_path,
+                        s.suppression_line,
+                        s.reason.dimmed()
+                    );
+                }
+            }
             println!(
                 "{}",
                 "=========================================================================================="
@@ -87,15 +117,50 @@ impl TerminalReporter {
             );
         }
 
+        if !suppressed.is_empty() {
+            println!(
+                "{}",
+                "Suppressed Violations (In-Source Justification):".dimmed()
+            );
+            for s in suppressed {
+                println!(
+                    "  {} {} at {}:{} | Reason: {}",
+                    "[SUPPRESSED]".cyan(),
+                    s.finding.rule_id.bold().white(),
+                    s.finding.location.file_path,
+                    s.suppression_line,
+                    s.reason.dimmed()
+                );
+            }
+            println!(
+                "{}",
+                "------------------------------------------------------------------------------------------"
+                    .dimmed()
+            );
+        }
+
         println!();
-        println!(
-            "Audit Summary: {} violations found ({} Critical, {} High, {} Medium, {} Low)",
-            findings.len().to_string().bold(),
-            critical_count.to_string().red().bold(),
-            high_count.to_string().bright_red().bold(),
-            med_count.to_string().yellow().bold(),
-            low_count.to_string().cyan()
-        );
+        if suppressed.is_empty() {
+            println!(
+                "Audit Summary: {} violations found ({} Critical, {} High, {} Medium, {} Low)",
+                findings.len().to_string().bold(),
+                critical_count.to_string().red().bold(),
+                high_count.to_string().bright_red().bold(),
+                med_count.to_string().yellow().bold(),
+                low_count.to_string().cyan()
+            );
+        } else {
+            println!(
+                "Audit Summary: {} violations found ({} Critical, {} High, {} Medium, {} Low) | {} suppressed with audited justification",
+                findings.len().to_string().bold(),
+                critical_count.to_string().red().bold(),
+                high_count.to_string().bright_red().bold(),
+                med_count.to_string().yellow().bold(),
+                low_count.to_string().cyan(),
+                suppressed.len().to_string().cyan().bold()
+            );
+        }
+
         println!(
             "Scanned: {} files in {} ms",
             total_files_scanned.to_string().bold(),

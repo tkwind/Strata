@@ -19,7 +19,7 @@ use crate::notify::DesktopNotifier;
 use crate::parser::docker::DockerParser;
 use crate::parser::k8s::K8sParser;
 use crate::parser::terraform::TerraformParser;
-use crate::parser::{Finding, Severity};
+use crate::parser::{Finding, Severity, SuppressedFinding, SuppressionParser};
 use crate::report::SarifReporter;
 use crate::rules::{BuiltinRuleEngine, LuaPolicyRunner};
 use crate::security::{PathSanitizer, SandboxedLuaEngine};
@@ -75,7 +75,7 @@ pub async fn start_dev_server(port: u16, scan_root: PathBuf, rules_dir: Option<P
     println!("  Local UI:      http://127.0.0.1:{}", port);
     println!("  API Endpoint:  http://127.0.0.1:{}/api/scan", port);
     println!("  SARIF Export:  http://127.0.0.1:{}/api/sarif", port);
-    println!("  Zero Telemetry • Offline • Sandboxed Lua Enabled");
+    println!("  Zero Telemetry | Offline | Sandboxed Lua Enabled");
     println!("  =======================================================");
     println!();
 
@@ -91,7 +91,10 @@ async fn serve_dashboard() -> Html<&'static str> {
     Html(DASHBOARD_HTML)
 }
 
-fn execute_internal_scan(root: &Path, rules_dir: Option<&Path>) -> (Vec<Finding>, usize, u128) {
+fn execute_internal_scan(
+    root: &Path,
+    rules_dir: Option<&Path>,
+) -> (Vec<Finding>, Vec<SuppressedFinding>, usize, u128) {
     let start_time = Instant::now();
     let sanitizer =
         PathSanitizer::new(Path::new(".")).unwrap_or_else(|_| PathSanitizer::new(root).unwrap());
@@ -106,6 +109,7 @@ fn execute_internal_scan(root: &Path, rules_dir: Option<&Path>) -> (Vec<Finding>
 
     let mut total_files_scanned = 0;
     let mut all_findings: Vec<Finding> = Vec::new();
+    let mut all_suppressions = Vec::new();
 
     let walker = WalkDir::new(&target_dir).into_iter().filter_entry(|e| {
         let name = e.file_name().to_string_lossy();
@@ -129,6 +133,8 @@ fn execute_internal_scan(root: &Path, rules_dir: Option<&Path>) -> (Vec<Finding>
         };
 
         total_files_scanned += 1;
+
+        all_suppressions.extend(SuppressionParser::parse_content(&file_str, &content));
 
         let secret_findings = builtin_engine.evaluate_raw_secrets(&file_str, &content);
         all_findings.extend(secret_findings);
@@ -155,19 +161,27 @@ fn execute_internal_scan(root: &Path, rules_dir: Option<&Path>) -> (Vec<Finding>
         }
     }
 
-    let mut filtered_findings: Vec<Finding> = all_findings
+    let filtered_findings: Vec<Finding> = all_findings
         .into_iter()
         .filter(|f| !cfg.is_rule_ignored(&f.rule_id))
         .collect();
 
-    filtered_findings.sort_by(|a, b| b.severity.cmp(&a.severity));
+    let (mut active_findings, suppressed_findings) =
+        SuppressionParser::filter_findings(filtered_findings, &all_suppressions);
+
+    active_findings.sort_by(|a, b| b.severity.cmp(&a.severity));
     let elapsed_ms = start_time.elapsed().as_millis();
 
-    (filtered_findings, total_files_scanned, elapsed_ms)
+    (
+        active_findings,
+        suppressed_findings,
+        total_files_scanned,
+        elapsed_ms,
+    )
 }
 
 async fn handle_api_scan(State(state): State<Arc<ServerState>>) -> Json<Value> {
-    let (findings, files_scanned, elapsed_ms) =
+    let (findings, suppressed, files_scanned, elapsed_ms) =
         execute_internal_scan(&state.scan_root, state.rules_dir.as_deref());
 
     // Calculate critical/high counts
@@ -191,13 +205,16 @@ async fn handle_api_scan(State(state): State<Arc<ServerState>>) -> Json<Value> {
         "total_files_scanned": files_scanned,
         "scan_duration_ms": elapsed_ms,
         "total_violations": findings.len(),
-        "findings": findings
+        "total_suppressed": suppressed.len(),
+        "findings": findings,
+        "suppressed": suppressed
     }))
 }
 
 async fn handle_api_sarif(State(state): State<Arc<ServerState>>) -> Response {
-    let (findings, _, _) = execute_internal_scan(&state.scan_root, state.rules_dir.as_deref());
-    let sarif_val = SarifReporter::generate(&findings);
+    let (findings, suppressed, _, _) =
+        execute_internal_scan(&state.scan_root, state.rules_dir.as_deref());
+    let sarif_val = SarifReporter::generate(&findings, &suppressed);
     let body = serde_json::to_string_pretty(&sarif_val).unwrap();
 
     (

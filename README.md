@@ -139,6 +139,34 @@ Custom policy scripts run in an isolated Lua 5.4 VM ([`src/security/sandbox.rs`]
 
 ---
 
+## In-Code Rule Suppression with Audit Justification
+
+For intentional architectural decisions (such as public assets buckets or legacy staging environments), Strata allows granular rule suppression directly above the affected resource block:
+
+```terraform
+# strata:ignore AWS-CIS-S3-001 reason: Public bucket intentionally configured for marketing CDN asset delivery
+resource "aws_s3_bucket" "marketing_cdn" {
+  bucket = "prod-marketing-assets-2026"
+  acl    = "public-read"
+}
+```
+
+Or for Dockerfiles and Kubernetes manifests:
+
+```dockerfile
+# strata:ignore DOCKER-CIS-4.2 reason: Base image pinned to internal golden registry digest in CI pipeline
+FROM node:latest
+```
+
+### Auditing Rules and Guarantees
+
+* **Mandatory Justification:** Directives lacking `reason: <explanation>` are discarded and will not suppress the violation.
+* **Proximity Scoping:** Directives apply only to the immediate resource block (within 3 lines before start).
+* **Multi-Rule Support:** Multiple rules can be suppressed simultaneously (`# strata:ignore RULE_1, RULE_2 reason: ...`).
+* **Complete Audit Trail:** Suppressed violations are logged in terminal output under `[SUPPRESSED]`, exported to SARIF with standard `inSource` justifications for GitHub Advanced Security, and recorded in JSON audit logs.
+
+---
+
 ## Active Security Rule Catalog
 
 <details open>
