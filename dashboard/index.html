@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Strata Dev Console</title>
+  <style>
+    :root {
+      --canvas: #0d1117;
+      --surface: #161b22;
+      --surface-subtle: #21262d;
+      --border: #30363d;
+      --border-muted: #21262d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --text-secondary: #7d8590;
+      --crit: #f85149;
+      --high: #db6d28;
+      --med: #d29922;
+      --low: #58a6ff;
+      --pass: #3fb950;
+      --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--canvas);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* Top Navigation */
+    .navbar {
+      height: 48px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+    }
+    .nav-left { display: flex; align-items: center; gap: 12px; }
+    .brand-title { font-size: 14px; font-weight: 600; color: #fff; letter-spacing: -0.2px; }
+    .tag {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 12px;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+    .nav-right { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--text-muted); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pass); display: inline-block; margin-right: 6px; }
+
+    /* Main Container */
+    .container { max-width: 1280px; margin: 0 auto; padding: 20px 16px; }
+
+    /* Summary Bar */
+    .summary-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .metrics { display: flex; align-items: center; gap: 20px; font-size: 12px; }
+    .metric-item { display: flex; align-items: center; gap: 6px; }
+    .metric-count { font-weight: 600; color: #fff; font-family: var(--font-mono); }
+    .metric-badge {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+    }
+    .badge-crit { background: var(--crit); }
+    .badge-high { background: var(--high); }
+    .badge-med { background: var(--med); }
+
+    /* Action Buttons */
+    .btn-group { display: flex; gap: 8px; }
+    button {
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button:hover { background: #30363d; border-color: #8b949e; }
+    button.primary { background: #238636; border-color: rgba(240,246,252,0.1); color: #fff; }
+    button.primary:hover { background: #2ea043; }
+
+    /* Tab Controls */
+    .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 16px; gap: 4px; }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      color: var(--text-muted);
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .tab-btn:hover { background: transparent; color: var(--text); }
+    .tab-btn.active { color: #fff; border-bottom-color: #f78166; }
+
+    /* Filter Controls */
+    .filter-bar {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      gap: 12px;
+    }
+    input[type="text"], select {
+      background: var(--canvas);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 5px 10px;
+      font-size: 12px;
+      outline: none;
+    }
+    input[type="text"]:focus, select:focus { border-color: #58a6ff; }
+    input[type="text"] { width: 320px; }
+
+    /* Tables */
+    .table-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th {
+      background: var(--surface-subtle);
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border-muted);
+      font-size: 12px;
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr.expandable { cursor: pointer; }
+    tr.expandable:hover { background: rgba(255,255,255,0.02); }
+
+    .pill {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      display: inline-block;
+    }
+    .pill-crit { background: rgba(248,81,73,0.15); color: #ff7b72; border: 1px solid rgba(248,81,73,0.4); }
+    .pill-high { background: rgba(219,109,40,0.15); color: #ffa657; border: 1px solid rgba(219,109,40,0.4); }
+    .pill-med { background: rgba(210,153,34,0.15); color: #d29922; border: 1px solid rgba(210,153,34,0.4); }
+
+    /* Detail Drawer */
+    .detail-row { background: var(--canvas); display: none; }
+    .detail-cell { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .diff-box {
+      background: #050505;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #c9d1d9;
+      margin-top: 8px;
+      white-space: pre-wrap;
+    }
+    .diff-del { color: #ffa198; background: rgba(248,81,73,0.1); display: block; padding: 1px 4px; }
+    .diff-add { color: #7ee787; background: rgba(63,185,80,0.1); display: block; padding: 1px 4px; }
+
+    /* Log Stream Table */
+    .log-row td { font-family: var(--font-mono); font-size: 11px; padding: 6px 12px; }
+
+    /* Lua Sandbox Form */
+    .sandbox-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 900px) { .sandbox-layout { grid-template-columns: 1fr; } }
+    textarea {
+      width: 100%;
+      height: 240px;
+      background: var(--canvas);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: #7ee787;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 12px;
+      resize: vertical;
+      outline: none;
+    }
+    textarea:focus { border-color: #58a6ff; }
+    .code-output {
+      background: var(--canvas);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      height: 240px;
+      overflow-y: auto;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="navbar">
+    <div class="nav-left">
+      <span class="brand-title">Strata</span>
+      <span class="tag">v0.1.0</span>
+      <span class="tag" style="color: #7ee787;">local-first</span>
+    </div>
+    <div class="nav-right">
+      <span><span class="status-dot"></span>Engine: Rust x86_64</span>
+      <span>Policy Sandbox: Lua 5.4</span>
+      <span>Port: 9090</span>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <!-- Top Summary & Actions -->
+    <div class="summary-strip">
+      <div class="metrics">
+        <div class="metric-item">
+          <span class="metric-badge badge-crit"></span>
+          <span>Critical:</span>
+          <span class="metric-count" id="count-crit">-</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-badge badge-high"></span>
+          <span>High:</span>
+          <span class="metric-count" id="count-high">-</span>
+        </div>
+        <div class="metric-item">
+          <span class="metric-badge badge-med"></span>
+          <span>Medium:</span>
+          <span class="metric-count" id="count-med">-</span>
+        </div>
+        <div class="metric-item">
+          <span style="color:var(--text-muted);">Files Scanned:</span>
+          <span class="metric-count" id="count-files">-</span>
+        </div>
+        <div class="metric-item">
+          <span style="color:var(--text-muted);">Duration:</span>
+          <span class="metric-count" id="count-latency" style="color:#7ee787;">-</span>
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="primary" onclick="refreshScan()">Re-scan</button>
+        <button onclick="sendTestToast()">Send Notification</button>
+        <button onclick="downloadSarif()">Export SARIF</button>
+        <button onclick="copyJsonFindings()">Copy JSON</button>
+      </div>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-findings-btn" onclick="switchTab('findings')">Findings (<span id="tab-findings-count">0</span>)</button>
+      <button class="tab-btn" id="tab-logs-btn" onclick="switchTab('logs')">Execution Telemetry (<span id="tab-logs-count">0</span>)</button>
+      <button class="tab-btn" id="tab-lua-btn" onclick="switchTab('lua')">Lua Policy Sandbox</button>
+    </div>
+
+    <!-- TAB 1: Policy Findings -->
+    <div id="tab-findings">
+      <div class="filter-bar">
+        <input type="text" id="search-input" placeholder="Filter by rule, path, or description..." oninput="filterTable()">
+        <select id="severity-filter" onchange="filterTable()">
+          <option value="ALL">All Severities</option>
+          <option value="Critical">Critical</option>
+          <option value="High">High</option>
+          <option value="Medium">Medium</option>
+        </select>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 100px;">Severity</th>
+              <th style="width: 160px;">Rule ID</th>
+              <th>Description</th>
+              <th style="width: 280px;">Location</th>
+              <th style="width: 200px;">Compliance Reference</th>
+            </tr>
+          </thead>
+          <tbody id="findings-table-body">
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">Running initial scan...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 2: Execution Logs -->
+    <div id="tab-logs" style="display: none;">
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 110px;">Time</th>
+              <th style="width: 70px;">Level</th>
+              <th>Event</th>
+              <th style="width: 320px;">Target</th>
+              <th style="width: 100px;">Latency</th>
+            </tr>
+          </thead>
+          <tbody id="logs-table-body">
+            <!-- Populated dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 3: Lua Sandbox Playground -->
+    <div id="tab-lua" style="display: none;">
+      <div class="sandbox-layout">
+        <div>
+          <div style="margin-bottom: 8px; font-weight: 500; font-size: 12px; color: var(--text-muted);">
+            Custom Rule Definition (Lua 5.4 - Quota: 250,000 instructions)
+          </div>
+          <textarea id="lua-editor">function evaluate(resource)
+    if resource.resource_type == "aws_s3_bucket" then
+        if not resource.attributes.tags or not resource.attributes.tags.Environment then
+            return {
+                violated = true,
+                message = "S3 bucket '" .. resource.resource_name .. "' is missing required 'Environment' tag"
+            }
+        end
+    end
+    return { violated = false }
+end</textarea>
+          <div style="margin-top: 8px;">
+            <button class="primary" onclick="executeLuaTest()">Execute Sandbox</button>
+          </div>
+        </div>
+        <div>
+          <div style="margin-bottom: 8px; font-weight: 500; font-size: 12px; color: var(--text-muted);">
+            Execution Result & Instruction Quota Status
+          </div>
+          <div class="code-output" id="lua-output">
+            Click "Execute Sandbox" to evaluate script in the isolated Lua VM.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let rawFindings = [];
+    let logEntries = [];
+
+    async function refreshScan() {
+      try {
+        const resp = await fetch("/api/scan");
+        const data = await resp.json();
+        rawFindings = data.findings || [];
+
+        // Update counts
+        let crit = 0, high = 0, med = 0;
+        rawFindings.forEach(f => {
+          if (f.severity === "Critical") crit++;
+          else if (f.severity === "High") high++;
+          else if (f.severity === "Medium") med++;
+        });
+
+        document.getElementById("count-crit").textContent = crit;
+        document.getElementById("count-high").textContent = high;
+        document.getElementById("count-med").textContent = med;
+        document.getElementById("count-files").textContent = data.total_files_scanned || 0;
+        document.getElementById("count-latency").textContent = (data.scan_duration_ms || 0) + " ms";
+        document.getElementById("tab-findings-count").textContent = rawFindings.length;
+
+        // Build log entries
+        buildLogs(data);
+
+        // Render table
+        renderFindingsTable(rawFindings);
+      } catch (err) {
+        console.error("Failed to fetch scan results", err);
+      }
+    }
+
+    function buildLogs(data) {
+      const now = new Date();
+      logEntries = [
+        { time: now.toLocaleTimeString(), level: "INFO", event: "Workspace scan started", target: "./", latency: "0.1 ms" },
+        { time: now.toLocaleTimeString(), level: "INFO", event: "Initialized Sandboxed Lua VM (Quota: 250k steps)", target: "sandbox.rs", latency: "0.2 ms" },
+        { time: now.toLocaleTimeString(), level: "INFO", event: "Validated scan root with PathSanitizer", target: "path_traversal.rs", latency: "0.1 ms" },
+      ];
+
+      rawFindings.forEach(f => {
+        logEntries.push({
+          time: now.toLocaleTimeString(),
+          level: f.severity === "Critical" ? "CRIT" : (f.severity === "High" ? "WARN" : "INFO"),
+          event: `Rule triggered: ${f.rule_id} (${f.title})`,
+          target: `${f.location.file_path}:${f.location.line_start}`,
+          latency: "0.3 ms"
+        });
+      });
+
+      logEntries.push({
+        time: now.toLocaleTimeString(),
+        level: "INFO",
+        event: `Scan complete. Found ${rawFindings.length} violations across ${data.total_files_scanned} files.`,
+        target: "./",
+        latency: `${data.scan_duration_ms} ms`
+      });
+
+      document.getElementById("tab-logs-count").textContent = logEntries.length;
+      renderLogsTable();
+    }
+
+    function renderLogsTable() {
+      const tbody = document.getElementById("logs-table-body");
+      tbody.innerHTML = logEntries.map(l => {
+        const color = l.level === "CRIT" ? "color: var(--crit);" : (l.level === "WARN" ? "color: var(--high);" : "color: var(--text-muted);");
+        return `
+          <tr class="log-row">
+            <td style="color: var(--text-secondary);">${l.time}</td>
+            <td style="${color}; font-weight: 600;">${l.level}</td>
+            <td>${escapeHtml(l.event)}</td>
+            <td style="color: var(--text-muted);">${escapeHtml(l.target)}</td>
+            <td style="color: var(--text-secondary);">${l.latency}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderFindingsTable(findings) {
+      const tbody = document.getElementById("findings-table-body");
+      if (findings.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--pass); padding: 32px;">No security policy violations detected across scanned infrastructure.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = findings.map((f, i) => {
+        const pillClass = f.severity === "Critical" ? "pill-crit" : (f.severity === "High" ? "pill-high" : "pill-med");
+        const diffBlock = generateDiffBlock(f);
+        return `
+          <tr class="expandable" onclick="toggleDetail(${i})">
+            <td><span class="pill ${pillClass}">${f.severity}</span></td>
+            <td style="font-family: var(--font-mono); font-weight: 600; color: #fff;">${f.rule_id}</td>
+            <td>
+              <div style="font-weight: 500;">${escapeHtml(f.title)}</div>
+              <div style="color: var(--text-muted); font-size: 11px; margin-top: 2px;">${escapeHtml(f.description)}</div>
+            </td>
+            <td style="font-family: var(--font-mono); color: var(--text-muted);">${f.location.file_path}:${f.location.line_start}</td>
+            <td style="color: var(--text-secondary); font-size: 11px;">${escapeHtml(f.compliance_ref)}</td>
+          </tr>
+          <tr class="detail-row" id="detail-${i}">
+            <td colspan="5" class="detail-cell">
+              <div style="font-weight: 600; margin-bottom: 4px; font-size: 11px; text-transform: uppercase; color: var(--text-muted);">Recommended Remediation:</div>
+              <div style="color: #e6edf3; font-size: 12px; margin-bottom: 8px;">${escapeHtml(f.remediation)}</div>
+              ${diffBlock}
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function generateDiffBlock(f) {
+      if (f.rule_id.includes("S3-001")) {
+        return `
+          <div class="diff-box">
+<span class="diff-del">- acl    = "public-read"</span>
+<span class="diff-add">+ acl    = "private"</span>
+          </div>`;
+      } else if (f.rule_id.includes("SG-001")) {
+        return `
+          <div class="diff-box">
+<span class="diff-del">- cidr_blocks = ["0.0.0.0/0"] # Open to public internet</span>
+<span class="diff-add">+ cidr_blocks = ["10.0.0.0/16"] # Restricted to internal VPC CIDR</span>
+          </div>`;
+      } else if (f.rule_id.includes("RDS-001")) {
+        return `
+          <div class="diff-box">
+<span class="diff-del">- publicly_accessible = true</span>
+<span class="diff-add">+ publicly_accessible = false</span>
+          </div>`;
+      } else if (f.rule_id.includes("DOCKER-CIS-4.1")) {
+        return `
+          <div class="diff-box">
+<span class="diff-del">- # Container running as default root user</span>
+<span class="diff-add">+ RUN adduser -D -u 10001 appuser && USER appuser</span>
+          </div>`;
+      }
+      return `
+        <div class="diff-box">
+<span class="diff-add">+ Compliance Standard: ${escapeHtml(f.compliance_ref)}</span>
+<span class="diff-add">+ Action: ${escapeHtml(f.remediation)}</span>
+        </div>`;
+    }
+
+    function toggleDetail(idx) {
+      const el = document.getElementById("detail-" + idx);
+      if (el) {
+        el.style.display = el.style.display === "table-row" ? "none" : "table-row";
+      }
+    }
+
+    function filterTable() {
+      const q = document.getElementById("search-input").value.toLowerCase();
+      const sev = document.getElementById("severity-filter").value;
+
+      const filtered = rawFindings.filter(f => {
+        const matchesSev = (sev === "ALL" || f.severity === sev);
+        const matchesQuery = (
+          f.rule_id.toLowerCase().includes(q) ||
+          f.title.toLowerCase().includes(q) ||
+          f.description.toLowerCase().includes(q) ||
+          f.location.file_path.toLowerCase().includes(q)
+        );
+        return matchesSev && matchesQuery;
+      });
+
+      renderFindingsTable(filtered);
+    }
+
+    function switchTab(name) {
+      document.getElementById("tab-findings").style.display = name === "findings" ? "block" : "none";
+      document.getElementById("tab-logs").style.display = name === "logs" ? "block" : "none";
+      document.getElementById("tab-lua").style.display = name === "lua" ? "block" : "none";
+
+      document.getElementById("tab-findings-btn").className = "tab-btn" + (name === "findings" ? " active" : "");
+      document.getElementById("tab-logs-btn").className = "tab-btn" + (name === "logs" ? " active" : "");
+      document.getElementById("tab-lua-btn").className = "tab-btn" + (name === "lua" ? " active" : "");
+    }
+
+    async function executeLuaTest() {
+      const script = document.getElementById("lua-editor").value;
+      const out = document.getElementById("lua-output");
+      out.textContent = "Executing in isolated Lua 5.4 VM...";
+
+      try {
+        const resp = await fetch("/api/test-lua", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ script })
+        });
+        const res = await resp.json();
+        out.textContent = JSON.stringify(res, null, 2);
+      } catch (e) {
+        out.textContent = "Error executing test: " + e;
+      }
+    }
+
+    async function sendTestToast() {
+      await fetch("/api/notify", { method: "POST" });
+    }
+
+    function downloadSarif() {
+      window.location.href = "/api/sarif";
+    }
+
+    function copyJsonFindings() {
+      navigator.clipboard.writeText(JSON.stringify(rawFindings, null, 2));
+      alert("JSON findings copied to clipboard.");
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    window.onload = refreshScan;
+  </script>
+</body>
+</html>

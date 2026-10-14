@@ -1,0 +1,18 @@
+# Insecure Dockerfile Fixture
+
+FROM node:latest
+
+WORKDIR /app
+COPY package*.json ./
+
+# Dangerous pipe-to-shell command
+RUN curl -sSL https://raw.githubusercontent.com/untrusted/install/main/setup.sh | bash
+
+COPY . .
+
+# Unnecessary SSH daemon port exposed
+EXPOSE 22
+EXPOSE 3000
+
+CMD ["node", "server.js"]
+# Missing USER instruction - runs as root

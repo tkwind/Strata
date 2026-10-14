@@ -1,0 +1,17 @@
+# Hardened Dockerfile Fixture (CIS Docker Benchmark Compliant)
+
+FROM node:20.11.0-alpine@sha256:79a51988b48873402434
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY . .
+
+# Dedicated non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]
