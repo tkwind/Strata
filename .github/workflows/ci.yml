@@ -1,0 +1,47 @@
+name: Strata CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Verify Code Formatting
+        run: cargo fmt -- --check
+
+      - name: Run Clippy Linter
+        run: cargo clippy -- -D warnings
+
+      - name: Run Test Suite
+        run: cargo test --verbose
+
+      - name: Build Optimized Release Binary
+        run: cargo build --release
+
+      - name: Self-Scan Integration Test
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ./target/release/strata.exe scan tests/fixtures/terraform/hardened_infra.tf
+          else
+            ./target/release/strata scan tests/fixtures/terraform/hardened_infra.tf
+          fi
